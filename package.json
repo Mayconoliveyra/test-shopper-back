@@ -1,0 +1,24 @@
+{
+  "name": "test-shopper-back",
+  "version": "0.1.0",
+  "author": "Maycon Oliveira",
+  "license": "ISC",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "npx ts-node-dev ./src/index.ts"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "http-status-codes": "^2.2.0",
+    "knex": "2.5.1",
+    "mysql2": "3.6.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.1.6"
+  }
+}
