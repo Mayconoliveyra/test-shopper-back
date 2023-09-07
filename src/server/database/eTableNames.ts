@@ -1,1 +1,3 @@
-export {};
+export enum ETableNames {
+  products = "products",
+}
