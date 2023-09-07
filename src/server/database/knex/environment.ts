@@ -1,7 +1,11 @@
 import { Knex } from "knex";
+import path from "path";
 
 export const development: Knex.Config = {
   client: "mysql2",
+  migrations: {
+    directory: path.resolve(__dirname, "..", "migrations"),
+  },
   connection: {
     host: process.env.DATABASE_HOST,
     port: Number(process.env.DATABASE_PORT),
