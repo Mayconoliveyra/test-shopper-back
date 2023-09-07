@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 
+import { PriceManagerController } from "../controllers/priceManager";
+
 const router = Router();
 
 router.get("/test", (req, res) => {
@@ -8,5 +10,11 @@ router.get("/test", (req, res) => {
 
   return res.status(StatusCodes.OK).json("Testado com sucesso!");
 });
+
+router.post(
+  `/upload-file-csv`,
+  PriceManagerController.uploadFileValidation,
+  PriceManagerController.uploadFile
+);
 
 export { router };
