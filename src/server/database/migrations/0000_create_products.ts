@@ -5,14 +5,7 @@ import { ETableNames } from "../eTableNames";
 export async function up(knex: Knex) {
   return knex.schema
     .createTable(ETableNames.products, (table) => {
-      table
-        .bigint("code")
-        .primary()
-        .unique()
-        .index()
-        .notNullable()
-        .unsigned()
-        .comment("CODIGO DO PRODUTO");
+      table.bigint("code").primary().comment("CODIGO DO PRODUTO");
       table.string("name", 100).notNullable().comment("NOME DO PRODUTO");
       table
         .decimal("cost_price", 9, 2)
