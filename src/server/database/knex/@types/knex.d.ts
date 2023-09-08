@@ -1,3 +1,8 @@
+import { IProduct } from "../../models/product";
+import { IPack } from "../../models/pack";
 declare module "knex/types/tables" {
-  interface Tables {}
+  interface Tables {
+    products: IProduct;
+    packs: IPack;
+  }
 }
