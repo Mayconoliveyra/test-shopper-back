@@ -33,7 +33,8 @@ const rules = (
     | "rule7"
     | "rule8"
     | "rule9"
-    | "rule10",
+    | "rule10"
+    | "rule11",
   column1?: string,
   column2?: string
 ) => {
@@ -49,6 +50,7 @@ const rules = (
     rule8: "O número de colunas não está alinhado com os demais registros.",
     rule9: "O ajuste de preço não pode exceder 10% a menos do preço atual do produto.",
     rule10: "Para atualizar um pacote, o componente do produto não deve violar nenhuma regra.",
+    rule11: "Ao atualizar o preço de um produto que outros produtos dependem como componente, é necessário incluir o ajuste no preço do pacote como parte do processo.",
   };
 
   return rules[rule];
@@ -145,6 +147,7 @@ const productIsComponentPack = async (
   product: IProductValidation,
   resultProducts: IProductValidation[]
 ): Promise<boolean | Error> => {
+  // Consulto os pacotes que tem o produto como complemento 'product_id'
   const productPack = await PriceManagerProvider.getProductPackComponent(
     product.code
   );
@@ -152,7 +155,9 @@ const productIsComponentPack = async (
     return new Error("Erro ao consultar o registro.");
   }
 
+  // Se o produto for dependente de algum pacote, sera retornando no array.
   if (productPack.length > 0) {
+    // Separo todos os id dos produtos que tem esse produto como complemento.
     const productComponentsCodes = productPack.map((item) => item.pack_id);
     const resultProdPack = await PriceManagerProvider.getProductsInCodes(
       productComponentsCodes
@@ -161,14 +166,14 @@ const productIsComponentPack = async (
       return new Error("Erro ao consultar o registro.");
     }
 
-    // Percorrendo todos os componentes do pack, para saber se todos os componentes estão informado na listagem.
+    // Percorrendo todos os produtos que dependem do componente
     for (const key in resultProdPack) {
       const component = resultProducts.find(
         (productComp) => productComp.code === resultProdPack[key].code
       );
       // Se o component de produto não existe na lista, retorna error.
       if (!component) {
-        return new Error(rules("rule4"));
+        return new Error(rules("rule11"));
       }
     }
 
