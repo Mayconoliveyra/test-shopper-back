@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
 import { PriceManagerProvider } from "../../database/providers/priceManager";
 import { IProduct } from "../../database/models/product";
-import { IPack } from "../../database/models/pack";
 
 type IRowExtract = {
   code: number;
@@ -13,7 +12,6 @@ type IRowError = {
   line?: string;
 };
 export type IProductValidation = IProduct &
-  IPack &
   Omit<IRowError, "line"> & { new_sales_price: number };
 interface IBodyProps {
   fileData: IRowExtract[];
@@ -58,9 +56,9 @@ const rules = (
 
 const productFound = (
   fileData: IRowExtract[],
-  resultProductsInCodes: Omit<IProductValidation, "new_sales_price">[]
+  resultProductsInCodes: IProduct[]
 ): IProductValidation[] => {
-  const newResultProducts = [];
+  const newResultProducts: IProductValidation[] = [];
 
   const codesNewPrice = fileData.map((item) => {
     return { code: item.code, new_sales_price: item.sales_price };
@@ -75,25 +73,67 @@ const productFound = (
         ...resultProductsInCodes[resultInCodes.indexOf(valor.code)],
         new_sales_price: valor.new_sales_price,
       };
-      newResultProducts.push(success);
+      newResultProducts.push(success as IProductValidation);
     } else {
       const error = { code: valor.code, msgError: rules("rule6") };
       newResultProducts.push(error as IProductValidation);
     }
   }
 
-  // ordeno a lista, de forma que os itens que são pacotes fiquem no final da lista.
-  newResultProducts.sort((a, b) => {
-    if (a.id === null && b.id !== null) {
-      return -1;
-    } else if (a.id !== null && b.id === null) {
-      return 1;
-    } else {
-      return 0;
-    }
-  });
-
   return newResultProducts;
+};
+
+const productIsPackValid = async (
+  product: IProductValidation,
+  resultProducts: IProductValidation[]
+): Promise<boolean | Error> => {
+  // Se o produto for um pack, vai ser retornado um array de objeto, nele te coluna 'product_id', que referente a o id do componente
+  // Se o item tiver 2 componente, sera retornado um array com 2 posições...
+  const productPack = await PriceManagerProvider.getProductPack(product.code);
+  if (productPack instanceof Error) {
+    return new Error("Erro ao consultar o registro.");
+  }
+
+  if (productPack.length > 0) {
+    // Filtra todos os códigos dos componentes referente ao produto.
+    const productComponentsCodes = productPack.map((item) => item.product_id);
+    const resultProdPack = await PriceManagerProvider.getProductsInCodes(
+      productComponentsCodes
+    );
+    if (resultProdPack instanceof Error) {
+      return new Error("Erro ao consultar o registro.");
+    }
+
+    let newPricePack = 0;
+    // Percorrendo todos os componentes do pack, para saber se todos os componentes estão informado na listagem.
+    for (const key in resultProdPack) {
+      const component = resultProducts.find(
+        (productComp) => productComp.code === resultProdPack[key].code
+      );
+      // Se o component de produto não existe na lista, retorna error.
+      if (!component) {
+        return new Error(rules("rule4"));
+      }
+      // Pego a quantidade do produto componente
+      const qtyPack = productPack.find(
+        (productComp) => productComp.product_id === component.code
+      );
+      if (qtyPack === undefined) {
+        return new Error("A quantidade do pacote não pode ser 'undefined'.");
+      }
+      // calculo o valor dos componentes
+      newPricePack = newPricePack + component.new_sales_price * qtyPack.qty;
+    }
+
+    // Se o novo preço for diferente da soma dos componentes, retorna erro.
+    if (product.new_sales_price !== newPricePack) {
+      return new Error(rules("rule4"));
+    }
+
+    return true; // Se for um pack valido, retornar true
+  }
+
+  return false; // se não for um pack retorna false.
 };
 
 export const uploadFileValidation = async (
@@ -287,55 +327,30 @@ export const uploadFile = async (
   // Valida se todos os códigos fornecidos existe na base.
   const resultProducts = productFound(fileData, resultProductsInCodes);
 
-  const result = resultProducts.map((product) => {
-    // Se já existe mensagem de erro setado, apenas retorno o registro.
-    if (product.msgError) return product;
+  const result = await Promise.all(
+    resultProducts.map(async (product) => {
+      // Se já existe mensagem de erro setado, apenas retorno o registro.
+      if (product.msgError) return product;
 
-    // Se id não esta definido, o item não é um pacote.
-    if (!product.id) {
-      // Preço de custo maior que o novo preço
-      if (product.cost_price > product.new_sales_price) {
-        return { code: product.code, msgError: rules("rule2") };
-      }
-    }
-
-    // Novo preço de venda maior que 10% que o preço atual
-    else if (product.new_sales_price > product.sales_price * 1.1) {
-      return { code: product.code, msgError: rules("rule3") };
-    }
-    // Novo preço de venda menor que 10% que o preço atual
-    else if (product.new_sales_price < product.sales_price * 0.9) {
-      return { code: product.code, msgError: rules("rule9") };
-    }
-
-    // Item pacote
-    if (product.id) {
-      // Item componente incluso na lista
-      if (codesToFind.indexOf(product.product_id) === -1) {
-        return { code: product.code, msgError: rules("rule4") };
+      // Verifica se o produto é um pack, se for, vou validar os componentes.
+      // Se for true,  é um pacote valido, se for false, não é pacote, se for error, é porque tem regra quebradas.
+      const isPack = await productIsPackValid(product, resultProducts);
+      if (isPack instanceof Error) {
+        return { code: product.code, msgError: isPack.message };
       }
 
-      // Consulto o produto componente na lista.
-      const componentProduct = resultProducts.find(
-        (produto) => produto.code === product.product_id
-      ) as IProductValidation;
-
-      // Valido se o componente tem alguma regra quebrada.
-      if (componentProduct.msgError) {
-        return { code: product.code, msgError: rules("rule10") };
+      // Novo preço de venda maior que 10% que o preço atual
+      if (product.new_sales_price > product.sales_price * 1.1) {
+        return { code: product.code, msgError: rules("rule3") };
+      }
+      // Novo preço de venda menor que 10% que o preço atual
+      else if (product.new_sales_price < product.sales_price * 0.9) {
+        return { code: product.code, msgError: rules("rule9") };
       }
 
-      const newPricePack =
-        componentProduct.qty * componentProduct.new_sales_price;
-
-      // Preço do pacote é diferente da soma dos itens
-      if (product.new_sales_price !== newPricePack) {
-        return { code: product.code, msgError: rules("rule4") };
-      }
-    }
-
-    return product;
-  });
+      return product;
+    })
+  );
 
   return res.status(StatusCodes.OK).json(result);
 };
