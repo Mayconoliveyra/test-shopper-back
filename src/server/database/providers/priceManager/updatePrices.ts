@@ -1,4 +1,3 @@
-import { PriceManagerProvider } from ".";
 import { IProductValidation } from "../../../controllers/priceManager/uploadFile";
 import { ETableNames } from "../../eTableNames";
 import { Knex } from "../../knex";
