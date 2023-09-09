@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
 import { IProductValidation } from "./uploadFile";
+import { PriceManagerProvider } from "../../database/providers/priceManager";
 
 interface IBodyProps {
   dataProducts: IProductValidation[];
@@ -28,8 +29,7 @@ export const updatePrices = async (
   res: Response
 ) => {
   const dataProducts = req.body.dataProducts;
+  await PriceManagerProvider.updatePrices(dataProducts);
 
-  console.log(dataProducts);
-
-  return res.status(StatusCodes.OK).json();
+  return res.status(StatusCodes.NO_CONTENT).send();
 };

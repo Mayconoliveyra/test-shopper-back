@@ -12,7 +12,7 @@ type IRowError = {
   line?: string;
 };
 export type IProductValidation = IProduct &
-  Omit<IRowError, "line"> & { new_sales_price: number };
+  Omit<IRowError, "line"> & { new_sales_price: number; new_cost_price: number };
 interface IBodyProps {
   fileData: IRowExtract[];
 }
@@ -86,7 +86,7 @@ const productFound = (
 const productIsPackValid = async (
   product: IProductValidation,
   resultProducts: IProductValidation[]
-): Promise<boolean | Error> => {
+): Promise<false | IProductValidation | Error> => {
   // Se o produto for um pack, vai ser retornado um array de objeto, nele te coluna 'product_id', que referente a o id do componente
   // Se o item tiver 2 componente, sera retornado um array com 2 posições...
   const productPack = await PriceManagerProvider.getProductPack(product.code);
@@ -105,6 +105,7 @@ const productIsPackValid = async (
     }
 
     let newPricePack = 0;
+    let newValueCost = 0;
     // Percorrendo todos os componentes do pack, para saber se todos os componentes estão informado na listagem.
     for (const key in resultProdPack) {
       const component = resultProducts.find(
@@ -123,11 +124,52 @@ const productIsPackValid = async (
       }
       // calculo o valor dos componentes
       newPricePack = newPricePack + component.new_sales_price * qtyPack.qty;
+
+      // Novo valor de custo
+      newValueCost =
+        newValueCost + resultProdPack[key].cost_price * qtyPack.qty;
     }
 
     // Se o novo preço for diferente da soma dos componentes, retorna erro.
     if (product.new_sales_price !== newPricePack) {
       return new Error(rules("rule4"));
+    }
+
+    return { ...product, new_cost_price: newValueCost }; // Se for um pack valido, retornar true
+  }
+
+  return false; // se não for um pack retorna false.
+};
+
+const productIsComponentPack = async (
+  product: IProductValidation,
+  resultProducts: IProductValidation[]
+): Promise<boolean | Error> => {
+  const productPack = await PriceManagerProvider.getProductPackComponent(
+    product.code
+  );
+  if (productPack instanceof Error) {
+    return new Error("Erro ao consultar o registro.");
+  }
+
+  if (productPack.length > 0) {
+    const productComponentsCodes = productPack.map((item) => item.pack_id);
+    const resultProdPack = await PriceManagerProvider.getProductsInCodes(
+      productComponentsCodes
+    );
+    if (resultProdPack instanceof Error) {
+      return new Error("Erro ao consultar o registro.");
+    }
+
+    // Percorrendo todos os componentes do pack, para saber se todos os componentes estão informado na listagem.
+    for (const key in resultProdPack) {
+      const component = resultProducts.find(
+        (productComp) => productComp.code === resultProdPack[key].code
+      );
+      // Se o component de produto não existe na lista, retorna error.
+      if (!component) {
+        return new Error(rules("rule4"));
+      }
     }
 
     return true; // Se for um pack valido, retornar true
@@ -337,6 +379,19 @@ export const uploadFile = async (
       const isPack = await productIsPackValid(product, resultProducts);
       if (isPack instanceof Error) {
         return { code: product.code, msgError: isPack.message };
+      }
+      if (isPack) {
+        product.new_cost_price = isPack.new_cost_price;
+      }
+
+      if (!isPack) {
+        const isPackComp = await productIsComponentPack(
+          product,
+          resultProducts
+        );
+        if (isPackComp instanceof Error) {
+          return { code: product.code, msgError: isPackComp.message };
+        }
       }
 
       // Novo preço de venda maior que 10% que o preço atual
