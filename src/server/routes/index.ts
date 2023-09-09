@@ -25,4 +25,10 @@ router.post(
   PriceManagerController.uploadFile
 );
 
+router.put(
+  `/price-manager/update-prices`,
+  PriceManagerController.updatePricesValidation,
+  PriceManagerController.updatePrices
+);
+
 export { router };

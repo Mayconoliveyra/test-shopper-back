@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
-import { getProductsInCodes } from "../../database/providers/priceManager";
+import { PriceManagerProvider } from "../../database/providers/priceManager";
 import { IProduct } from "../../database/models/product";
 import { IPack } from "../../database/models/pack";
 
@@ -273,7 +273,9 @@ export const uploadFile = async (
 
   // Filtra todos códigos do produtos que serão consultados na base.
   const codesToFind = fileData.map((item) => item.code);
-  const resultProductsInCodes = await getProductsInCodes(codesToFind);
+  const resultProductsInCodes = await PriceManagerProvider.getProductsInCodes(
+    codesToFind
+  );
   if (resultProductsInCodes instanceof Error) {
     return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
       errors: {
