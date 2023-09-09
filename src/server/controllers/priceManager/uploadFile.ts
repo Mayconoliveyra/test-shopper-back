@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
+import { getProductsInCodes } from "../../database/providers/priceManager";
+import { IProduct } from "../../database/models/product";
+import { IPack } from "../../database/models/pack";
 
 type IRowExtract = {
   code: number;
@@ -9,7 +12,9 @@ type IRowError = {
   msgError: string;
   line?: string;
 };
-
+export type IProductValidation = IProduct &
+  IPack &
+  Omit<IRowError, "line"> & { new_sales_price: number };
 interface IBodyProps {
   fileData: IRowExtract[];
 }
@@ -28,7 +33,9 @@ const rules = (
     | "rule5"
     | "rule6"
     | "rule7"
-    | "rule8",
+    | "rule8"
+    | "rule9"
+    | "rule10",
   column1?: string,
   column2?: string
 ) => {
@@ -36,15 +43,57 @@ const rules = (
   const rules = {
     rule1: "O arquivo deve conter o código do produto e o novo preço que será carregado.",
     rule2: "O preço de venda não pode ser inferior ao preço de custo.",
-    rule3: "O ajuste de preço não pode exceder 10% a mais nem 10% a menos do preço atual do produto.",
+    rule3: "O ajuste de preço não pode exceder 10% a mais do preço atual do produto.",
     rule4: "Ao atualizar o preço de um pacote, é necessário incluir os ajustes nos preços dos componentes do pacote, de modo que a soma dos preços dos componentes corresponda ao preço do pacote.",
     rule5: "Cada registro deve incluir as colunas 'código do produto' e 'novo preço de venda'.",
     rule6: "O código de produto fornecido não corresponde a nenhum registro existente.",
     rule7: `Aguardava-se um valor numérico para '${column1}', porém foi recebido: '${column2}'`,
     rule8: "O número de colunas não está alinhado com os demais registros.",
+    rule9: "O ajuste de preço não pode exceder 10% a menos do preço atual do produto.",
+    rule10: "Para atualizar um pacote, o componente do produto não deve violar nenhuma regra.",
   };
 
   return rules[rule];
+};
+
+const productFound = (
+  fileData: IRowExtract[],
+  resultProductsInCodes: Omit<IProductValidation, "new_sales_price">[]
+): IProductValidation[] => {
+  const newResultProducts = [];
+
+  const codesNewPrice = fileData.map((item) => {
+    return { code: item.code, new_sales_price: item.sales_price };
+  });
+  const resultInCodes = resultProductsInCodes.map((row) => row.code);
+
+  // Percorrer o array onde está contido todos os códigos dos produtos que foi fornecido no arquivo..
+  // É verifico se todos eles foram encontrado na base, caso não tenha sido encontrado retorno o erro.
+  for (const valor of codesNewPrice) {
+    if (resultInCodes.indexOf(valor.code) !== -1) {
+      const success = {
+        ...resultProductsInCodes[resultInCodes.indexOf(valor.code)],
+        new_sales_price: valor.new_sales_price,
+      };
+      newResultProducts.push(success);
+    } else {
+      const error = { code: valor.code, msgError: rules("rule6") };
+      newResultProducts.push(error as IProductValidation);
+    }
+  }
+
+  // ordeno a lista, de forma que os itens que são pacotes fiquem no final da lista.
+  newResultProducts.sort((a, b) => {
+    if (a.id === null && b.id !== null) {
+      return -1;
+    } else if (a.id !== null && b.id === null) {
+      return 1;
+    } else {
+      return 0;
+    }
+  });
+
+  return newResultProducts;
 };
 
 export const uploadFileValidation = async (
@@ -217,11 +266,74 @@ export const extractCSVDataFromBuffer = async (
 };
 
 export const uploadFile = async (
-  req: Request<{}, IBodyProps>,
+  req: Request<{}, {}, IBodyProps>,
   res: Response
 ) => {
-  /*  console.log(req.query);
-  console.log(req.body.fileData); */
+  const fileData = req.body.fileData;
 
-  return res.status(StatusCodes.NO_CONTENT).send();
+  // Filtra todos códigos do produtos que serão consultados na base.
+  const codesToFind = fileData.map((item) => item.code);
+  const resultProductsInCodes = await getProductsInCodes(codesToFind);
+  if (resultProductsInCodes instanceof Error) {
+    return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
+      errors: {
+        default: resultProductsInCodes.message,
+      },
+    });
+  }
+
+  // Valida se todos os códigos fornecidos existe na base.
+  const resultProducts = productFound(fileData, resultProductsInCodes);
+
+  const result = resultProducts.map((product) => {
+    // Se já existe mensagem de erro setado, apenas retorno o registro.
+    if (product.msgError) return product;
+
+    // Se id não esta definido, o item não é um pacote.
+    if (!product.id) {
+      // Preço de custo maior que o novo preço
+      if (product.cost_price > product.new_sales_price) {
+        return { code: product.code, msgError: rules("rule2") };
+      }
+    }
+
+    // Novo preço de venda maior que 10% que o preço atual
+    else if (product.new_sales_price > product.sales_price * 1.1) {
+      return { code: product.code, msgError: rules("rule3") };
+    }
+    // Novo preço de venda menor que 10% que o preço atual
+    else if (product.new_sales_price < product.sales_price * 0.9) {
+      return { code: product.code, msgError: rules("rule9") };
+    }
+
+    // Item pacote
+    if (product.id) {
+      // Item componente incluso na lista
+      if (codesToFind.indexOf(product.product_id) === -1) {
+        return { code: product.code, msgError: rules("rule4") };
+      }
+
+      // Consulto o produto componente na lista.
+      const componentProduct = resultProducts.find(
+        (produto) => produto.code === product.product_id
+      ) as IProductValidation;
+
+      // Valido se o componente tem alguma regra quebrada.
+      if (componentProduct.msgError) {
+        return { code: product.code, msgError: rules("rule10") };
+      }
+
+      const newPricePack =
+        componentProduct.qty * componentProduct.new_sales_price;
+
+      // Preço do pacote é diferente da soma dos itens
+      if (product.new_sales_price !== newPricePack) {
+        return { code: product.code, msgError: rules("rule4") };
+      }
+    }
+
+    return product;
+  });
+
+  return res.status(StatusCodes.OK).json(result);
 };
