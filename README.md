@@ -14,4 +14,12 @@
    DATABASE_PORT=
    DATABASE_PASSWORD=
 
+   exemplo:
+   SERVER_PORT=3030
+   DATABASE_HOST=localhost
+   DATABASE_USER=root
+   DATABASE_NAME=test-shopper
+   DATABASE_PORT=3306
+   DATABASE_PASSWORD=123456
+
 6. Para iniciar o projeto utilize o comando `npm start`
