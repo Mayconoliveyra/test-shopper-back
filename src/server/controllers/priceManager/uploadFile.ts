@@ -1,18 +1,24 @@
 import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
-import { PriceManagerProvider } from "../../database/providers/priceManager";
-import { IProduct } from "../../database/models/product";
 
-type IRowExtract = {
+import { PriceManagerProvider } from "../../database/providers/priceManager";
+
+import {
+  brokenRule,
+  validateExistenceProducts,
+  validateNewPrice,
+  validateProductIsComponent,
+  validateProductIsPack,
+} from "./validatorsRules";
+
+export interface IRowExtract {
   code: number;
-  sales_price: number;
-};
-type IRowError = {
+  new_sales_price: number;
+}
+interface IRowError {
   msgError: string;
   line?: string;
-};
-export type IProductValidation = IProduct &
-  Omit<IRowError, "line"> & { new_sales_price: number; new_cost_price: number };
+}
 interface IBodyProps {
   fileData: IRowExtract[];
 }
@@ -21,167 +27,6 @@ interface IQueryProps {
   nameColumnCode?: string;
   nameColumnNewPrice?: string;
 }
-
-const rules = (
-  rule:
-    | "rule1"
-    | "rule2"
-    | "rule3"
-    | "rule4"
-    | "rule5"
-    | "rule6"
-    | "rule7"
-    | "rule8"
-    | "rule9"
-    | "rule10"
-    | "rule11",
-  column1?: string,
-  column2?: string
-) => {
-  // prettier-ignore
-  const rules = {
-    rule1: "O arquivo deve conter o código do produto e o novo preço que será carregado.",
-    rule2: "O preço de venda não pode ser inferior ao preço de custo.",
-    rule3: "O ajuste de preço não pode exceder 10% a mais do preço atual do produto.",
-    rule4: "Ao atualizar o preço de um pacote, é necessário incluir os ajustes nos preços dos componentes do pacote, de modo que a soma dos preços dos componentes corresponda ao preço do pacote.",
-    rule5: "Cada registro deve incluir as colunas 'código do produto' e 'novo preço de venda'.",
-    rule6: "O código de produto fornecido não corresponde a nenhum registro existente.",
-    rule7: `Aguardava-se um valor numérico para '${column1}', porém foi recebido: '${column2}'`,
-    rule8: "O número de colunas não está alinhado com os demais registros.",
-    rule9: "O ajuste de preço não pode exceder 10% a menos do preço atual do produto.",
-    rule10: "Para atualizar um pacote, o componente do produto não deve violar nenhuma regra.",
-    rule11: "Ao atualizar o preço de um produto que outros produtos dependem como componente, é necessário incluir o ajuste no preço do pacote como parte do processo.",
-  };
-
-  return rules[rule];
-};
-
-const productFound = (
-  fileData: IRowExtract[],
-  resultProductsInCodes: IProduct[]
-): IProductValidation[] => {
-  const newResultProducts: IProductValidation[] = [];
-
-  const codesNewPrice = fileData.map((item) => {
-    return { code: item.code, new_sales_price: item.sales_price };
-  });
-  const resultInCodes = resultProductsInCodes.map((row) => row.code);
-
-  // Percorrer o array onde está contido todos os códigos dos produtos que foi fornecido no arquivo..
-  // É verifico se todos eles foram encontrado na base, caso não tenha sido encontrado retorno o erro.
-  for (const valor of codesNewPrice) {
-    if (resultInCodes.indexOf(valor.code) !== -1) {
-      const success = {
-        ...resultProductsInCodes[resultInCodes.indexOf(valor.code)],
-        new_sales_price: valor.new_sales_price,
-      };
-      newResultProducts.push(success as IProductValidation);
-    } else {
-      const error = { code: valor.code, msgError: rules("rule6") };
-      newResultProducts.push(error as IProductValidation);
-    }
-  }
-
-  return newResultProducts;
-};
-
-const productIsPackValid = async (
-  product: IProductValidation,
-  resultProducts: IProductValidation[]
-): Promise<false | IProductValidation | Error> => {
-  // Se o produto for um pack, vai ser retornado um array de objeto, nele te coluna 'product_id', que referente a o id do componente
-  // Se o item tiver 2 componente, sera retornado um array com 2 posições...
-  const productPack = await PriceManagerProvider.getProductPack(product.code);
-  if (productPack instanceof Error) {
-    return new Error("Erro ao consultar o registro.");
-  }
-
-  if (productPack.length > 0) {
-    // Filtra todos os códigos dos componentes referente ao produto.
-    const productComponentsCodes = productPack.map((item) => item.product_id);
-    const resultProdPack = await PriceManagerProvider.getProductsInCodes(
-      productComponentsCodes
-    );
-    if (resultProdPack instanceof Error) {
-      return new Error("Erro ao consultar o registro.");
-    }
-
-    let newPricePack = 0;
-    let newValueCost = 0;
-    // Percorrendo todos os componentes do pack, para saber se todos os componentes estão informado na listagem.
-    for (const key in resultProdPack) {
-      const component = resultProducts.find(
-        (productComp) => productComp.code === resultProdPack[key].code
-      );
-      // Se o component de produto não existe na lista, retorna error.
-      if (!component) {
-        return new Error(rules("rule4"));
-      }
-      // Pego a quantidade do produto componente
-      const qtyPack = productPack.find(
-        (productComp) => productComp.product_id === component.code
-      );
-      if (qtyPack === undefined) {
-        return new Error("A quantidade do pacote não pode ser 'undefined'.");
-      }
-      // calculo o valor dos componentes
-      newPricePack = newPricePack + component.new_sales_price * qtyPack.qty;
-
-      // Novo valor de custo
-      newValueCost =
-        newValueCost + resultProdPack[key].cost_price * qtyPack.qty;
-    }
-
-    // Se o novo preço for diferente da soma dos componentes, retorna erro.
-    if (product.new_sales_price !== newPricePack) {
-      return new Error(rules("rule4"));
-    }
-
-    return { ...product, new_cost_price: newValueCost }; // Se for um pack valido, retornar true
-  }
-
-  return false; // se não for um pack retorna false.
-};
-
-const productIsComponentPack = async (
-  product: IProductValidation,
-  resultProducts: IProductValidation[]
-): Promise<boolean | Error> => {
-  // Consulto os pacotes que tem o produto como complemento 'product_id'
-  const productPack = await PriceManagerProvider.getProductPackComponent(
-    product.code
-  );
-  if (productPack instanceof Error) {
-    return new Error("Erro ao consultar o registro.");
-  }
-
-  // Se o produto for dependente de algum pacote, sera retornando no array.
-  if (productPack.length > 0) {
-    // Separo todos os id dos produtos que tem esse produto como complemento.
-    const productComponentsCodes = productPack.map((item) => item.pack_id);
-    const resultProdPack = await PriceManagerProvider.getProductsInCodes(
-      productComponentsCodes
-    );
-    if (resultProdPack instanceof Error) {
-      return new Error("Erro ao consultar o registro.");
-    }
-
-    // Percorrendo todos os produtos que dependem do componente
-    for (const key in resultProdPack) {
-      const component = resultProducts.find(
-        (productComp) => productComp.code === resultProdPack[key].code
-      );
-      // Se o component de produto não existe na lista, retorna error.
-      if (!component) {
-        return new Error(rules("rule11"));
-      }
-    }
-
-    return true; // Se for um pack valido, retornar true
-  }
-
-  return false; // se não for um pack retorna false.
-};
 
 export const uploadFileValidation = async (
   req: Request<{}, {}, {}, IQueryProps>,
@@ -296,7 +141,7 @@ export const extractCSVDataFromBuffer = async (
     // Pela lógica todas as linhas devem ter a mesma quantidades de colunas.
     if (currentLine.length !== headers.length) {
       const error = {
-        msgError: rules("rule8"),
+        msgError: brokenRule("rule8"),
         line: lines[iLinha],
       };
       rowsErrors.push(error);
@@ -307,14 +152,14 @@ export const extractCSVDataFromBuffer = async (
         // So vou pegar as colunas referente ao 'indexCode' e 'indexNewPrice'
         // Se o arquivo tiver outras colunas, será ignoradas.
         if (iHeader === indexCode || iHeader === indexNewPrice) {
-          const columnName = iHeader === indexCode ? "code" : "sales_price";
+          const columnName = iHeader === indexCode ? "code" : "new_sales_price";
           const valueNumber = Number(currentLine[iHeader]) || "";
 
           if (typeof valueNumber === "number") {
             row[columnName] = valueNumber;
           } else {
             const error = {
-              msgError: rules(
+              msgError: brokenRule(
                 "rule7",
                 iHeader === indexCode ? queryNameCode : queryNamePrice,
                 currentLine[iHeader]
@@ -346,7 +191,7 @@ export const extractCSVDataFromBuffer = async (
     });
   }
 
-  // Se o arquivo foi extraído sem erros iniciais de validação, prosseguirei com o processo de atualização dos preços.
+  // Se o arquivo foi extraído sem erros iniciais de validação, prosseguirei com o processo de validação das regras.
   req.body.fileData = rows;
 
   return next();
@@ -358,59 +203,31 @@ export const uploadFile = async (
 ) => {
   const fileData = req.body.fileData;
 
-  // Filtra todos códigos do produtos que serão consultados na base.
+  // Cria um novo array, contendo apenas os 'code' dos produtos que serão atualizados.
   const codesToFind = fileData.map((item) => item.code);
-  const resultProductsInCodes = await PriceManagerProvider.getProductsInCodes(
-    codesToFind
-  );
-  if (resultProductsInCodes instanceof Error) {
+  // Consulto na base todos os produtos que serão atualizados, passando o array de 'codes' gerado anteriormente.
+  // Vai ser retornando apenas os registros que existem na base.
+  // prettier-ignore
+  const resultProductsInDB = await PriceManagerProvider.getProductsInCodes(codesToFind);
+  if (resultProductsInDB instanceof Error) {
     return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({
       errors: {
-        default: resultProductsInCodes.message,
+        default: resultProductsInDB.message,
       },
     });
   }
 
-  // Valida se todos os códigos fornecidos existe na base.
-  const resultProducts = productFound(fileData, resultProductsInCodes);
+  // prettier-ignore
+  const resultValidateProductInDB = validateExistenceProducts(fileData, resultProductsInDB);
 
-  const result = await Promise.all(
-    resultProducts.map(async (product) => {
-      // Se já existe mensagem de erro setado, apenas retorno o registro.
-      if (product.msgError) return product;
+  // prettier-ignore
+  const resultValidateProductIsPack = await validateProductIsPack(resultValidateProductInDB);
 
-      // Verifica se o produto é um pack, se for, vou validar os componentes.
-      // Se for true,  é um pacote valido, se for false, não é pacote, se for error, é porque tem regra quebradas.
-      const isPack = await productIsPackValid(product, resultProducts);
-      if (isPack instanceof Error) {
-        return { code: product.code, msgError: isPack.message };
-      }
-      if (isPack) {
-        product.new_cost_price = isPack.new_cost_price;
-      }
+  // prettier-ignore
+  const resultValidateProductIsComponent = await validateProductIsComponent(resultValidateProductIsPack);
 
-      if (!isPack) {
-        const isPackComp = await productIsComponentPack(
-          product,
-          resultProducts
-        );
-        if (isPackComp instanceof Error) {
-          return { code: product.code, msgError: isPackComp.message };
-        }
-      }
+  // prettier-ignore
+  const resultValidateNewPrice = await validateNewPrice(resultValidateProductIsComponent);
 
-      // Novo preço de venda maior que 10% que o preço atual
-      if (product.new_sales_price > product.sales_price * 1.1) {
-        return { code: product.code, msgError: rules("rule3") };
-      }
-      // Novo preço de venda menor que 10% que o preço atual
-      else if (product.new_sales_price < product.sales_price * 0.9) {
-        return { code: product.code, msgError: rules("rule9") };
-      }
-
-      return product;
-    })
-  );
-
-  return res.status(StatusCodes.OK).json(result);
+  return res.status(StatusCodes.OK).json(resultValidateNewPrice);
 };
