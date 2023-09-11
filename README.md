@@ -47,11 +47,11 @@ O desenvolvimento dessa solução representa um passo significativo na simplific
 ## Testes
 
 Este projeto inclui uma série de testes automatizados para garantir a qualidade do código. Os testes são realizados usando a estrutura de testes Jest.
-<br>Importante: Os testes estão configurados para serem executados na mesma base do projeto, simplificando o processo de teste.
 
 ### Executando os Testes
 
 Para executar os testes, siga estas etapas:
 
 1. Certifique-se de ter concluído todo o processo de configuração e instalação mencionado anteriormente, pois é essencial para que os testes funcionem corretamente.
-2. Para executar os teste utilize o comando `npm run test`
+2. Crie uma base de dados com o nome 'test-shopper' e assegure-se de que ela esteja vazia, sem tabelas ou registros.
+3. Para executar os teste utilize o comando `npm run test`
