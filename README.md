@@ -37,7 +37,7 @@ O desenvolvimento dessa solução representa um passo significativo na simplific
    <br> SERVER_PORT=3030
    <br> DATABASE_HOST=localhost
    <br> DATABASE_USER=root
-   <br> DATABASE_NAME=test-shopper
+   <br> DATABASE_NAME=shopper
    <br> DATABASE_PORT=3306
    <br> DATABASE_PASSWORD=123456
 
