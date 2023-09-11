@@ -8,14 +8,14 @@
 4. Crie um arquivo .env no diretório raiz do projeto
 5. Configure as variáveis de ambiente no arquivo .env. Você pode usar o arquivo .env.example como modelo, renomeando-o para .env e inserindo as informações necessárias
 
-   <br> SERVER_PORT=
+   SERVER_PORT=
    <br> DATABASE_HOST=
    <br> DATABASE_USER=
    <br> DATABASE_NAME=
    <br> DATABASE_PORT=
    <br> DATABASE_PASSWORD=
 
-   <br> exemplo:
+   exemplo:
    <br> SERVER_PORT=3030
    <br> DATABASE_HOST=localhost
    <br> DATABASE_USER=root
@@ -29,7 +29,7 @@
 ## Testes
 
 Este projeto inclui uma série de testes automatizados para garantir a qualidade do código. Os testes são realizados usando a estrutura de testes Jest.
-Importante: Os testes estão configurados para serem executados na mesma base do projeto, simplificando o processo de teste.
+<br>Importante: Os testes estão configurados para serem executados na mesma base do projeto, simplificando o processo de teste.
 
 ### Executando os Testes
 
