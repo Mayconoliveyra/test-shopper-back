@@ -36,13 +36,15 @@ export const updatePricesValidation = async (
           },
         });
       }
-      // Se o produto é pacote  'new_cost_price_pack' deve ta preenchido com valor numérico
+      // Se o produto é pacote 'new_cost_price_pack' deve ta preenchido com valor numérico
       else if ("new_cost_price_pack" in product) {
-        return res.status(StatusCodes.BAD_REQUEST).json({
-          errors: {
-            default: "'new_cost_price_pack' deve ser numérico",
-          },
-        });
+        if (typeof product.new_cost_price_pack !== "number") {
+          return res.status(StatusCodes.BAD_REQUEST).json({
+            errors: {
+              default: "'new_cost_price_pack' deve ser numérico",
+            },
+          });
+        }
       }
     }
   } else {
