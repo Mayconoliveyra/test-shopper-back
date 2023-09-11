@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { StatusCodes } from "http-status-codes";
-import { IProductValidation } from "./uploadFile";
 import { PriceManagerProvider } from "../../database/providers/priceManager";
+import { IProductValidation } from "./validatorsRules";
 
 interface IBodyProps {
   dataProducts: IProductValidation[];
@@ -13,6 +13,7 @@ export const updatePricesValidation = async (
   next: NextFunction
 ) => {
   const dataProducts = req.body.dataProducts;
+
   if (!(dataProducts.length > 0)) {
     return res.status(StatusCodes.BAD_REQUEST).json({
       errors: {
