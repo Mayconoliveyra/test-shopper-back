@@ -15,6 +15,8 @@ const config: Config = {
 
   testMatch: ["<rootDir>/tests/**/*.test.ts"],
 
+  globalSetup: "./tests/globalSetup.ts",
+
   transform: {
     "^.+\\.(ts|tsx)$": "ts-jest",
   },

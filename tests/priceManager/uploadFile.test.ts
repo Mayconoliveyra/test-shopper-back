@@ -1,5 +1,7 @@
 import { StatusCodes } from "http-status-codes";
 import { testServer } from "./../jest.setup";
+import { Knex } from "../../src/server/database/knex";
+import { ETableNames } from "../../src/server/database/eTableNames";
 
 const prefix = "/price-manager/upload-file-csv?";
 
@@ -194,12 +196,53 @@ describe("PriceManager - uploadFile", () => {
     expect(res2.statusCode).toEqual(StatusCodes.BAD_REQUEST);
     expect(res2.body).toHaveProperty("errors.default");
   });
-  it("Product does not exist in the base", async () => {
+  it("Product does not exist in the base(rule6)", async () => {
     const url = `${prefix}fileHasHeader=true&nameColumnCode=code&nameColumnNewPrice=price`;
 
     const fileCSV = fileCSVCreate(`
       code, price
       999, 2
+    `);
+
+    const res = await testServer
+      .post(url)
+      .attach("csv-file-products", fileCSV, "arquivo.csv");
+    expect(res.statusCode).toEqual(StatusCodes.OK);
+
+    expect(res.body[0]).toEqual({
+      code: 999,
+      msgError:
+        "O código de produto fornecido não corresponde a nenhum registro existente.",
+    });
+  });
+  it("Product is a package, but it already broke a rule", async () => {
+    const url = `${prefix}fileHasHeader=true&nameColumnCode=code&nameColumnNewPrice=price`;
+    const newProducts1 = [
+      {
+        code: 1,
+        name: "Produto pack 1",
+        cost_price: 1,
+        sales_price: 2,
+      },
+      {
+        code: 2,
+        name: "Produto component 1",
+        cost_price: 1,
+        sales_price: 2,
+      },
+    ];
+    const newPack1 = {
+      pack_id: 1,
+      product_id: 2,
+      qty: 1,
+    };
+    await Knex.insert(newProducts1).table(ETableNames.products);
+    await Knex.insert(newPack1).table(ETableNames.packs);
+
+    const fileCSV = fileCSVCreate(`
+      code, price
+      1, 2
+      2, 2
     `);
 
     const res = await testServer
